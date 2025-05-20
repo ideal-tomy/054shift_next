@@ -1,0 +1,23 @@
+{
+  "name": "shift-management-system",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Shift management tool for small businesses",
+  "scripts": {
+    "// TODO": "Add scripts for managing workspaces (admin-web, firebase, liff-app)"
+  },
+  "workspaces": [
+    "admin-web",
+    "firebase/functions",
+    "liff-app"
+  ],
+  "keywords": [
+    "shift",
+    "management",
+    "firebase",
+    "react",
+    "line"
+  ],
+  "author": "",
+  "license": "ISC"
+}
