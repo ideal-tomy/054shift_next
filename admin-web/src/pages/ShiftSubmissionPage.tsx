@@ -66,10 +66,10 @@ const ShiftSubmissionPage: React.FC = () => {
   };
 
   return (
-    <div className="container mx-auto p-4">
+    <div>
       <h1 className="text-2xl font-bold mb-6">シフト希望提出</h1>
 
-      <div className="space-y-6 max-w-md mx-auto">
+      <div className="space-y-6">
         <div>
           {/* 日付ピッカー (変更なし) */}
           <Label htmlFor="date-picker" className="block text-sm font-medium text-gray-700 mb-1">

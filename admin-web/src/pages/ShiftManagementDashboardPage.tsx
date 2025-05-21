@@ -197,6 +197,11 @@ const MyDateCellWrapper: React.FC<
   currentCalendarDateForCell,
   staffingLevelThresholds,
 }) => {
+  const handleWrapperClick = (e: React.MouseEvent) => {
+    console.log('MyDateCellWrapper clicked for date:', date, 'Target:', e.target, 'CurrentTarget:', e.currentTarget);
+    // e.stopPropagation(); // Experiment with this later if needed
+  };
+
   console.log('MyDateCellWrapper CALLED FOR:', date);
   const formattedDate = dateFnsFormat(date, 'yyyy-MM-dd');
 
@@ -243,6 +248,7 @@ const MyDateCellWrapper: React.FC<
   return (
     <div 
       className={staffingClassName} // 計算されたクラス名をここに適用
+      onClick={handleWrapperClick} // Added onClick to the wrapper
       style={{
         // border: '1px solid lightgray', // 必要であれば控えめな枠線を追加
         backgroundColor: 
