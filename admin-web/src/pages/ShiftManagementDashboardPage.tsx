@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { isSameDay, parseISO } from 'date-fns'; // For DailyDetailsPanel
 
 // シフトリクエストの型定義
 export type ShiftRequestItem = {
@@ -38,6 +39,77 @@ export type ShiftRequestItem = {
 };
 
 // 初期モックデータ（後でstateに格納）
+// DailyDetailsPanel コンポーネントの定義
+interface DailyDetailsPanelProps {
+  selectedDate: Date;
+  allShifts: ShiftRequestItem[];
+  onClose: () => void;
+  onApproveShift: (shiftId: string) => void;
+  onRejectShift: (shiftId: string) => void;
+}
+
+const DailyDetailsPanel: React.FC<DailyDetailsPanelProps> = ({ selectedDate, allShifts, onClose, onApproveShift, onRejectShift }) => {
+  const shiftsForDate = allShifts.filter(shift =>
+    isSameDay(parseISO(shift.date), selectedDate)
+  );
+  const approvedShifts = shiftsForDate.filter(s => s.status === 'approved');
+  const pendingShifts = shiftsForDate.filter(s => s.status === 'pending');
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50" onClick={onClose}>
+      <div className="bg-white p-6 rounded-lg shadow-xl max-w-lg w-full" onClick={(e) => e.stopPropagation()}>
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-xl font-semibold">
+            {dateFnsFormat(selectedDate, "yyyy年M月d日 (E)", { locale: ja })}
+          </h2>
+          <Button variant="ghost" size="icon" onClick={onClose} aria-label="閉じる">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+          </Button>
+        </div>
+        {shiftsForDate.length === 0 ? (
+          <p>この日のシフト情報はありません。</p>
+        ) : (
+          <>
+            {approvedShifts.length > 0 && (
+              <div className="mb-4">
+                <h3 className="font-medium text-green-700 mb-1">承認済み ({approvedShifts.length}件)</h3>
+                <ul className="list-disc list-inside text-sm space-y-1">
+                  {approvedShifts.map(shift => (
+                    <li key={`approved-${shift.id}`}>{shift.staffName}: {shift.startTime} - {shift.endTime}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {pendingShifts.length > 0 && (
+              <div>
+                <h3 className="font-medium text-yellow-700 mb-1">申請中 ({pendingShifts.length}件)</h3>
+                <ul className="space-y-2 text-sm">
+                  {pendingShifts.map(shift => (
+                    <li key={`pending-${shift.id}`} className="flex justify-between items-center">
+                      <span>{shift.staffName}: {shift.startTime} - {shift.endTime}</span>
+                      <div className="space-x-2">
+                        <Button size="sm" variant="outline" className="border-green-500 text-green-600 hover:bg-green-50 hover:text-green-700 focus-visible:ring-green-400 px-2 py-1 text-xs" onClick={() => onApproveShift(shift.id)}>
+                          承認
+                        </Button>
+                        <Button size="sm" variant="outline" className="border-red-500 text-red-600 hover:bg-red-50 hover:text-red-700 focus-visible:ring-red-400 px-2 py-1 text-xs" onClick={() => onRejectShift(shift.id)}>
+                          却下
+                        </Button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+             {approvedShifts.length === 0 && pendingShifts.length === 0 && (
+                <p>表示対象のシフト（承認済みまたは申請中）はありません。</p>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const STAFFING_LEVEL_THRESHOLDS = {
   SEVERE_SHORTAGE_BELOW_PERCENT: 0.5, // 50%未満で深刻な不足
   MODERATE_SHORTAGE_BELOW_PERCENT: 0.8, // 80%未満でやや不足 (50%以上)
@@ -68,11 +140,15 @@ const initialMockShiftRequests: ShiftRequestItem[] = [
 ];
 
 const ShiftManagementDashboardPage: React.FC = () => {
+  // Ensure handleSelectSlot is defined (it should be from previous steps, if not, re-add)
+  // const handleSelectSlot = (...) => { ... }; 
   const [dateRange, setDateRange] = useState<DateRange | undefined>({
     from: new Date(),
     to: new Date(new Date().setDate(new Date().getDate() + 7)),
   });
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
+  const [selectedDateForDetails, setSelectedDateForDetails] = useState<Date | null>(null);
+  const [showDailyDetailsPanel, setShowDailyDetailsPanel] = useState<boolean>(false);
   const [shiftRequests, setShiftRequests] = useState<ShiftRequestItem[]>(initialMockShiftRequests);
   const [dailyTargetStaffCount, setDailyTargetStaffCount] = useState<number>(3); // 目標スタッフ人数 (テストデータに合わせて3に変更)
   const [averageHoursPerStaff, setAverageHoursPerStaff] = useState<number>(8); // 平均勤務時間
@@ -80,6 +156,19 @@ const ShiftManagementDashboardPage: React.FC = () => {
 
   const locales = {
     'ja-JP': ja,
+  };
+
+  const handleSelectSlot = (slotInfo: { start: Date; end: Date; slots: Date[] | string[]; action: 'select' | 'click' | 'doubleClick' }) => {
+    console.log('Selected slot:', slotInfo);
+    // 月表示で単一の日付がクリックされた場合のみを対象とする
+    if ((slotInfo.action === 'click' || slotInfo.action === 'select') && slotInfo.slots.length === 1) {
+      setSelectedDateForDetails(slotInfo.start);
+      setShowDailyDetailsPanel(true);
+      console.log('Attempting to show DailyDetailsPanel for:', slotInfo.start);
+    } else if (slotInfo.action === 'select' && slotInfo.slots.length > 1) {
+      // 範囲選択の場合は何もしない
+      console.log('Date range selected, not opening detail panel.');
+    }
   };
 
   const localizer = dateFnsLocalizer({
@@ -443,48 +532,63 @@ const MyDateCellWrapper: React.FC<
             </TableBody>
           </Table>
           ) : (
-            <div style={{ height: '600px' }}> {/* Ensure the calendar has enough height */} 
-              <BigCalendar
-                localizer={localizer}
-                events={calendarEvents}
-                startAccessor="start"
-                endAccessor="end"
-                style={{ height: '100%' }}
-                culture='ja-JP' // Set culture to Japanese
-                messages={{
-                  allDay: '終日',
-                  previous: '前',
-                  next: '次',
-                  today: '今日',
-                  month: '月',
-                  week: '週',
-                  day: '日',
-                  agenda: '予定リスト',
-                  date: '日付',
-                  time: '時間',
-                  event: 'イベント',
-                  noEventsInRange: 'この範囲に予定はありません。',
-                  showMore: total => `他 ${total} 件`
-                }}
-                eventPropGetter={eventStyleGetter}
-                // dayPropGetter={dayPropGetter} // Replaced by dateCellWrapper
-                date={currentCalendarDate} // Control the displayed month
-                onNavigate={(newDate) => setCurrentCalendarDate(newDate)} // Update state on month change
-                components={{
-                  dateCellWrapper: (props) => (
-                    <MyDateCellWrapper
-                      {...props}
-                      shiftRequests={shiftRequests}
-                      dailyTargetStaffCount={dailyTargetStaffCount}
-                      averageHoursPerStaff={averageHoursPerStaff}
-                      currentCalendarDateForCell={currentCalendarDate}
-                      staffingLevelThresholds={STAFFING_LEVEL_THRESHOLDS}
-                    />
-                  ),
-                  // event: EventComponent, // Keep commented out for now. If custom event display is needed later, define and use it.
-                }}
-              />
-            </div>
+            <> {/* カレンダービュー全体をフラグメントで囲む */}
+              {showDailyDetailsPanel && selectedDateForDetails && (
+                <DailyDetailsPanel
+                  selectedDate={selectedDateForDetails}
+                  allShifts={shiftRequests}
+                  onApproveShift={handleApproveShift}
+                  onRejectShift={handleRejectShift}
+                  onClose={() => {
+                    setShowDailyDetailsPanel(false);
+                    setSelectedDateForDetails(null);
+                  }}
+                />
+              )}
+              <div style={{ height: '600px' }}> {/* カレンダーの高さ確保 */}
+                <BigCalendar
+                  localizer={localizer}
+                  events={calendarEvents}
+                  startAccessor="start"
+                  endAccessor="end"
+                  style={{ height: '100%' }}
+                  culture='ja-JP'
+                  messages={{
+                    allDay: '終日',
+                    previous: '前',
+                    next: '次',
+                    today: '今日',
+                    month: '月',
+                    week: '週',
+                    day: '日',
+                    agenda: '予定リスト',
+                    date: '日付',
+                    time: '時間',
+                    event: 'イベント',
+                    noEventsInRange: 'この範囲に予定はありません。',
+                    showMore: (total: number) => `他 ${total} 件` // 型ヒント追加
+                  }}
+                  eventPropGetter={eventStyleGetter}
+                  date={currentCalendarDate}
+                  onNavigate={(newDate: Date) => setCurrentCalendarDate(newDate)} // 型ヒント追加
+                  selectable
+                  onSelectSlot={handleSelectSlot}
+                  components={{
+                    // toolbar: CustomToolbar, // 必要であれば後で復活
+                    dateCellWrapper: (wrapperProps: DateCellWrapperProps) => ( // 型ヒント追加
+                      <MyDateCellWrapper
+                        {...wrapperProps}
+                        shiftRequests={shiftRequests}
+                        dailyTargetStaffCount={dailyTargetStaffCount}
+                        averageHoursPerStaff={averageHoursPerStaff}
+                        currentCalendarDateForCell={currentCalendarDate}
+                        staffingLevelThresholds={STAFFING_LEVEL_THRESHOLDS}
+                      />
+                    ),
+                  }}
+                />
+              </div>
+            </>
           )}
         </div>
       </div>
