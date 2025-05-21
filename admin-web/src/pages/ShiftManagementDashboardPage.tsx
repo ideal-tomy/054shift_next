@@ -8,13 +8,12 @@ import {
 } from "@/components/ui/popover";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils"; // cnユーティリティをインポート
-import { format } from "date-fns";
+import { format as dateFnsFormat, parse as dateFnsParse, startOfWeek, getDay, isSameMonth as dateFnsIsSameMonth, differenceInMinutes as dateFnsDifferenceInMinutes } from "date-fns";
 import { Calendar as CalendarIcon } from "lucide-react";
 import { DateRange } from "react-day-picker";
 import StaffingSummaryChart from '@/components/StaffingSummaryChart'; // 作成したコンポーネントをインポート
 import { Locale } from 'date-fns'; // Import Locale type
-import { Calendar as BigCalendar, dateFnsLocalizer, Event as CalendarEvent } from 'react-big-calendar';
-import { format as dateFnsFormat, parse, startOfWeek, getDay } from 'date-fns';
+import { Calendar as BigCalendar, dateFnsLocalizer, Event as CalendarEvent, DateCellWrapperProps } from 'react-big-calendar';
 import 'react-big-calendar/lib/css/react-big-calendar.css';
 import { ja } from 'date-fns/locale'; // Import Japanese locale
 import {
@@ -39,9 +38,30 @@ export type ShiftRequestItem = {
 };
 
 // 初期モックデータ（後でstateに格納）
+const STAFFING_LEVEL_THRESHOLDS = {
+  SEVERE_SHORTAGE_BELOW_PERCENT: 0.5, // 50%未満で深刻な不足
+  MODERATE_SHORTAGE_BELOW_PERCENT: 0.8, // 80%未満でやや不足 (50%以上)
+  SLIGHT_SHORTAGE_BELOW_PERCENT: 1.0,   // 100%未満で軽微な不足 (80%以上)
+  OVERSTAFFING_ABOVE_PERCENT: 1.2,    // 120%超で過剰
+  // 100%以上120%以下は staffing-ok とする
+};
+
 const initialMockShiftRequests: ShiftRequestItem[] = [
   { id: '1', date: '2025-05-28', staffName: '山田 太郎', startTime: '09:00', endTime: '17:00', status: 'pending' },
-  { id: '2', date: '2025-05-28', staffName: '佐藤 花子', startTime: '13:00', endTime: '22:00', status: 'approved' },
+  { id: '6', date: '2025-05-30', staffName: '伊藤 五郎', startTime: '08:00', endTime: '16:00', status: 'approved' },
+  // Test data for May 12 (Staffing OK - target 24 hours)
+  { id: '7', date: '2025-05-12', staffName: 'John Doe', startTime: '09:00', endTime: '17:00', status: 'approved' }, // 8 hours
+  { id: '8', date: '2025-05-12', staffName: 'Jane Smith', startTime: '09:00', endTime: '17:00', status: 'approved' }, // 8 hours
+  { id: '9', date: '2025-05-12', staffName: 'Mike Lee', startTime: '09:00', endTime: '17:00', status: 'approved' }, // 8 hours
+  // Test data for May 13 (Overstaffing - target 24 hours)
+  { id: '10', date: '2025-05-13', staffName: 'Alice Brown', startTime: '09:00', endTime: '17:00', status: 'approved' }, // 8 hours
+  { id: '11', date: '2025-05-13', staffName: 'Bob Green', startTime: '09:00', endTime: '17:00', status: 'approved' }, // 8 hours
+  { id: '12', date: '2025-05-13', staffName: 'Carol White', startTime: '09:00', endTime: '17:00', status: 'approved' }, // 8 hours
+  { id: '13', date: '2025-05-13', staffName: 'David Black', startTime: '09:00', endTime: '17:00', status: 'approved' }, // 8 hours
+  // Test data for May 14 (Slight Shortage - target 24 hours, achieved 20 hours)
+  { id: '14', date: '2025-05-14', staffName: 'Eve Gray', startTime: '09:00', endTime: '17:00', status: 'approved' }, // 8 hours
+  { id: '15', date: '2025-05-14', staffName: 'Frank Blue', startTime: '09:00', endTime: '17:00', status: 'approved' }, // 8 hours
+  { id: '16', date: '2025-05-14', staffName: 'Grace Red', startTime: '09:00', endTime: '13:00', status: 'approved' }, // 4 hours
   { id: '3', date: '2025-05-29', staffName: '鈴木 一郎', startTime: '18:00', endTime: '23:00', status: 'pending' },
   { id: '4', date: '2025-05-29', staffName: '高橋 次郎', startTime: '09:00', endTime: '15:00', status: 'rejected' },
   { id: '5', date: '2025-05-30', staffName: '田中 三郎', startTime: '10:00', endTime: '18:00', status: 'pending' },
@@ -54,31 +74,203 @@ const ShiftManagementDashboardPage: React.FC = () => {
   });
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
   const [shiftRequests, setShiftRequests] = useState<ShiftRequestItem[]>(initialMockShiftRequests);
+  const [dailyTargetStaffCount, setDailyTargetStaffCount] = useState<number>(3); // 目標スタッフ人数 (テストデータに合わせて3に変更)
+  const [averageHoursPerStaff, setAverageHoursPerStaff] = useState<number>(8); // 平均勤務時間
+  const [currentCalendarDate, setCurrentCalendarDate] = useState(new Date()); // カレンダーの現在表示月
 
   const locales = {
     'ja-JP': ja,
   };
 
-  const localizer = dateFnsLocalizer({ // LINT_FIX_ID: 93c30d8d-bbbd-4c37-81ea-559c1bae34ab, 04f904bb-018e-49cb-85f7-2932b45e533e, 896cb415-c0e2-46dd-a240-6a633873f4ed, b5d8a3ab-3062-41fd-83a7-0ffb79afa81b, b7ec7c3f-36b3-4b3b-b0ac-a9a2feb945d9
+  const localizer = dateFnsLocalizer({
     format: (date: Date, formatStr: string, options?: { locale?: Locale }) => dateFnsFormat(date, formatStr, { locale: options?.locale || ja }),
-    parse,
+    parse: (dateString: string, formatString: string, referenceDate: Date, options?: { locale?: Locale }) => dateFnsParse(dateString, formatString, referenceDate, { locale: options?.locale || ja }),
     startOfWeek: (date: Date, options?: { locale?: Locale, weekStartsOn?: 0 | 1 | 2 | 3 | 4 | 5 | 6 }) => startOfWeek(date, { locale: options?.locale || ja, weekStartsOn: options?.weekStartsOn }),
     getDay,
     locales,
   });
+
+// SimplifiedWrapperForDebug コンポーネントの定義
+const MyDateCellWrapper: React.FC<
+  DateCellWrapperProps & {
+    shiftRequests: ShiftRequestItem[];
+    dailyTargetStaffCount: number;
+    averageHoursPerStaff: number;
+    currentCalendarDateForCell: Date;
+    staffingLevelThresholds: typeof STAFFING_LEVEL_THRESHOLDS;
+  }
+> = ({
+  children,
+  value: date, // This is the date for the cell
+  shiftRequests,
+  dailyTargetStaffCount,
+  averageHoursPerStaff,
+  currentCalendarDateForCell,
+  staffingLevelThresholds,
+}) => {
+  console.log('MyDateCellWrapper CALLED FOR:', date);
+  const formattedDate = dateFnsFormat(date, 'yyyy-MM-dd');
+
+  const approvedShiftsOnDate = shiftRequests.filter(
+    (req) => req.date === formattedDate && req.status === 'approved'
+  );
+
+  const totalActualHours = approvedShiftsOnDate.reduce((total, shift) => {
+    // Assuming startTime and endTime are 'HH:mm' strings
+    const start = dateFnsParse(shift.startTime, 'HH:mm', new Date());
+    const end = dateFnsParse(shift.endTime, 'HH:mm', new Date());
+    return total + dateFnsDifferenceInMinutes(end, start) / 60;
+  }, 0);
+
+  let staffingClassName = 'date-header-other-month'; // Default for days not in current month view
+
+  if (currentCalendarDateForCell && dateFnsIsSameMonth(date, currentCalendarDateForCell)) {
+    if (dailyTargetStaffCount <= 0 || averageHoursPerStaff <= 0) {
+        staffingClassName = 'date-header-normal'; // Or some other default
+    } else {
+      const equivalentActualStaff = totalActualHours / averageHoursPerStaff;
+      const staffingRatio = dailyTargetStaffCount > 0 ? equivalentActualStaff / dailyTargetStaffCount : 0; // Avoid division by zero if dailyTargetStaffCount is 0
+
+      if (dailyTargetStaffCount <= 0) { // Handle cases where target is not set or invalid
+        staffingClassName = 'date-header-normal'; // Or some other appropriate class
+      } else if (staffingRatio < staffingLevelThresholds.SEVERE_SHORTAGE_BELOW_PERCENT) {
+        staffingClassName = 'date-header-severe-shortage';
+      } else if (staffingRatio < staffingLevelThresholds.MODERATE_SHORTAGE_BELOW_PERCENT) {
+        staffingClassName = 'date-header-moderate-shortage';
+      } else if (staffingRatio < staffingLevelThresholds.SLIGHT_SHORTAGE_BELOW_PERCENT) {
+        staffingClassName = 'date-header-slight-shortage';
+      } else if (staffingRatio <= staffingLevelThresholds.OVERSTAFFING_ABOVE_PERCENT) {
+        staffingClassName = 'date-header-staffing-ok';
+      } else { // staffingRatio > staffingLevelThresholds.OVERSTAFFING_ABOVE_PERCENT
+        staffingClassName = 'date-header-overstaffing';
+      }
+    }
+  }
+
+  console.log(`MyDateCellWrapper for ${formattedDate}: Staffing Class: ${staffingClassName}`);
+
+  // ルートのdivにクラス名とデバッグスタイルを適用
+  // children（デフォルトのセル内容）をそのままレンダリング
+  return (
+    <div 
+      className={staffingClassName} // 計算されたクラス名をここに適用
+      style={{
+        // border: '1px solid lightgray', // 必要であれば控えめな枠線を追加
+        backgroundColor: 
+          staffingClassName === 'date-header-severe-shortage' ? 'rgba(255, 100, 100, 0.2)' : // 緊急な人員不足 (より目立つ赤系)
+          staffingClassName === 'date-header-moderate-shortage' ? 'rgba(255, 165, 0, 0.2)' :  // 中程度の人員不足 (オレンジ系)
+          staffingClassName === 'date-header-slight-shortage' ? 'rgba(255, 255, 0, 0.2)' :    // 軽微な人員不足 (黄色系)
+          staffingClassName === 'date-header-overstaffing' ? 'rgba(173, 216, 230, 0.3)' :  // 人員過剰 (水色系)
+          staffingClassName === 'date-header-staffing-ok' ? 'rgba(144, 238, 144, 0.2)' :  // 適正 (薄緑系)
+          staffingClassName === 'date-header-other-month' ? 'rgba(240, 240, 240, 0.1)' : // 当月外 (非常に薄いグレー)
+          'rgba(211, 211, 211, 0.1)', // その他 (薄いグレー)
+        height: '100%',
+        width: '100%', 
+        display: 'block', 
+      }}
+    >
+      {children} 
+    </div>
+  );
+};
+
+
+
+  const eventStyleGetter = (event: any) => { // LINT_FIX_ID: bdd0903b-c241-41c7-927e-e08d14530664, 378edfe9-4310-4537-8739-69d705f2acf8, 9a727e94-79b2-4db6-a052-900928cf0d80
+    const status = event.resource.status;
+    let backgroundColor = '';
+    let textColor = 'white'; // Default text color
+
+    switch (status) {
+      case 'approved':
+        backgroundColor = '#22c55e'; // green-500
+        break;
+      case 'pending':
+        backgroundColor = '#facc15'; // yellow-400
+        textColor = '#374151'; // gray-700 for better contrast on yellow
+        break;
+      case 'rejected':
+        backgroundColor = '#ef4444'; // red-500
+        break;
+      default:
+        backgroundColor = '#3b82f6'; // blue-500 (default if status is unknown)
+        break;
+    }
+
+    return {
+      style: {
+        backgroundColor,
+        color: textColor,
+        borderRadius: '5px',
+        border: 'none',
+        opacity: 0.9,
+        display: 'block',
+      },
+    };
+  };
 
   const calendarEvents: CalendarEvent[] = shiftRequests.map(req => {
     const [year, month, day] = req.date.split('-').map(Number);
     const [startHour, startMinute] = req.startTime.split(':').map(Number);
     const [endHour, endMinute] = req.endTime.split(':').map(Number);
     return {
-      title: `${req.staffName} (${req.startTime}-${req.endTime}) - ${req.status === 'pending' ? '申請中' : req.status === 'approved' ? '承認済' : '却下済'}`, // Include status in title
+      title: `${req.staffName} ${req.startTime}-${req.endTime}`,
       start: new Date(year, month - 1, day, startHour, startMinute),
       end: new Date(year, month - 1, day, endHour, endMinute),
-      allDay: false, // Assuming shifts are not all-day events
-      resource: req, // Optionally, attach the original request for more details
+      allDay: false,
+      resource: req, // Pass the original request object for styling and actions
     };
   });
+
+/*
+  const dayPropGetter = (date: Date) => {
+    const formattedDate = dateFnsFormat(date, 'yyyy-MM-dd');
+    const approvedShiftsOnDate = shiftRequests.filter(
+      (req) => req.date === formattedDate && req.status === 'approved'
+    );
+
+    // カレンダーが表示している月以外の日はデフォルトのスタイルを適用
+    // (react-big-calendarがrbc-off-range-bgクラスを適用する)
+    // Note: This ties coloring to the dateRange state, not necessarily the calendar's current view month.
+    // For more sophisticated behavior, consider the calendar's own current view date.
+    if (!dateRange || !dateRange.from || !isSameMonth(date, dateRange.from)) { // LINT_FIX_ID: c0c10833-a5b2-4e9f-a64a-158d9b7e1f7d
+      // If dateRange or dateRange.from is not set, or if the date is not in the same month as dateRange.from,
+      // apply default styling (or handle as appropriate for non-current-month days).
+      // This also implicitly handles the case where the calendar view might be on a month different from dateRange.from.
+      return { className: '' }; 
+    }
+    // Original logic using dateRange.from (now safe after the check above)
+    // The check for isSameMonth is already handled by the condition above.
+
+    let actualTotalHours = 0;
+    approvedShiftsOnDate.forEach((req) => {
+      const startTimeParts = req.startTime.split(':').map(Number);
+      const endTimeParts = req.endTime.split(':').map(Number);
+      const startDateTime = new Date(1970, 0, 1, startTimeParts[0], startTimeParts[1]);
+      const endDateTime = new Date(1970, 0, 1, endTimeParts[0], endTimeParts[1]);
+      // 日をまたぐシフトは考慮しないシンプルな計算
+      actualTotalHours += differenceInHours(endDateTime, startDateTime);
+    });
+
+    const targetTotalHours = dailyTargetStaffCount * averageHoursPerStaff;
+    // averageHoursPerStaffが0の場合のdivision by zeroを避ける
+    const equivalentActualStaff = averageHoursPerStaff > 0 ? actualTotalHours / averageHoursPerStaff : 0;
+
+    let customClassName = ''; // Use custom classes for more CSS control
+    if (targetTotalHours > 0) { // 目標がある場合のみ評価
+      if (equivalentActualStaff < dailyTargetStaffCount * STAFFING_LEVEL_THRESHOLDS.SEVERE_SHORTAGE_BELOW_PERCENT) {
+        customClassName = 'day-severe-shortage';
+      } else if (equivalentActualStaff < dailyTargetStaffCount * STAFFING_LEVEL_THRESHOLDS.MODERATE_SHORTAGE_BELOW_PERCENT) {
+        customClassName = 'day-moderate-shortage';
+      } else {
+        customClassName = 'day-staffing-ok';
+      }
+    }
+
+    return {
+      className: customClassName,
+    };
+  };*/
 
   const handleApproveShift = (shiftId: string) => {
     setShiftRequests(prevRequests => 
@@ -123,11 +315,11 @@ const ShiftManagementDashboardPage: React.FC = () => {
                     dateRange?.from ? (
                       dateRange.to ? (
                         <>
-                          {format(dateRange.from, "LLL dd, y")} - {" "}
-                          {format(dateRange.to, "LLL dd, y")}
+                          {dateFnsFormat(dateRange.from, "LLL dd, y")} - {" "}
+                          {dateFnsFormat(dateRange.to, "LLL dd, y")}
                         </>
                       ) : (
-                        format(dateRange.from, "LLL dd, y")
+                        dateFnsFormat(dateRange.from, "LLL dd, y")
                       )
                     ) : (
                       <span>日付を選択</span>
@@ -173,8 +365,8 @@ const ShiftManagementDashboardPage: React.FC = () => {
               <StaffingSummaryChart 
                 shiftRequests={shiftRequests} 
                 dateRange={dateRange} 
-                dailyTargetStaffCount={2} // 例: 1日に2人体制が目標
-                averageHoursPerStaff={8}  // 例: 1人あたり平均8時間勤務
+                dailyTargetStaffCount={dailyTargetStaffCount}
+                averageHoursPerStaff={averageHoursPerStaff}
               />
             </div>
         </div>
@@ -213,7 +405,7 @@ const ShiftManagementDashboardPage: React.FC = () => {
                   <TableCell>
                     <Checkbox id={`select-${request.id}`} aria-label={`Select row ${request.id}`} />
                   </TableCell>
-                  <TableCell>{format(new Date(request.date), "MM/dd (E)", { locale: ja })}</TableCell>
+                  <TableCell>{dateFnsFormat(new Date(request.date), "MM/dd (E)", { locale: ja })}</TableCell>
                   <TableCell>{request.staffName}</TableCell>
                   <TableCell>{request.startTime} - {request.endTime}</TableCell>
                   <TableCell>
@@ -274,32 +466,22 @@ const ShiftManagementDashboardPage: React.FC = () => {
                   noEventsInRange: 'この範囲に予定はありません。',
                   showMore: total => `他 ${total} 件`
                 }}
-                // Custom event styling based on status
-                eventPropGetter={(event) => {
-                  const originalRequest = event.resource as ShiftRequestItem;
-                  let newStyle = {
-                    backgroundColor: "gray",
-                    color: 'black',
-                    borderRadius: "5px",
-                    border: "none"
-                  };
-                  if (originalRequest.status === 'approved') {
-                    newStyle.backgroundColor = '#dcfce7'; // green-100
-                    newStyle.color = '#166534'; // green-700
-                    newStyle.border = '1px solid #86efac'; // green-300
-                  } else if (originalRequest.status === 'pending') {
-                    newStyle.backgroundColor = '#fef9c3'; // yellow-100
-                    newStyle.color = '#854d0e'; // yellow-700
-                    newStyle.border = '1px solid #fde047'; // yellow-300
-                  } else if (originalRequest.status === 'rejected') {
-                    newStyle.backgroundColor = '#fee2e2'; // red-100
-                    newStyle.color = '#991b1b'; // red-700
-                    newStyle.border = '1px solid #fca5a5'; // red-300
-                  }
-                  return {
-                    className: "",
-                    style: newStyle
-                  };
+                eventPropGetter={eventStyleGetter}
+                // dayPropGetter={dayPropGetter} // Replaced by dateCellWrapper
+                date={currentCalendarDate} // Control the displayed month
+                onNavigate={(newDate) => setCurrentCalendarDate(newDate)} // Update state on month change
+                components={{
+                  dateCellWrapper: (props) => (
+                    <MyDateCellWrapper
+                      {...props}
+                      shiftRequests={shiftRequests}
+                      dailyTargetStaffCount={dailyTargetStaffCount}
+                      averageHoursPerStaff={averageHoursPerStaff}
+                      currentCalendarDateForCell={currentCalendarDate}
+                      staffingLevelThresholds={STAFFING_LEVEL_THRESHOLDS}
+                    />
+                  ),
+                  // event: EventComponent, // Keep commented out for now. If custom event display is needed later, define and use it.
                 }}
               />
             </div>

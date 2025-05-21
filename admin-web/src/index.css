@@ -78,3 +78,144 @@ body {
     @apply bg-background text-foreground;
   }
 }
+
+/* 
+  MyDateCellWrapper は rbc-date-cell-content-wrapper クラスを持つ div を生成し、
+  そこに staffingClassName (例: date-header-severe-shortage) を追加します。
+  react-big-calendar の標準の .rbc-header (日付の数字が表示される部分) の背景色を、
+  この staffingClassName に応じて変更します。
+*/
+
+/* 日付ヘッダーのデフォルトスタイル調整 (月表示) */
+.rbc-month-view .rbc-date-cell .rbc-header {
+  padding: 2px 4px; /* 例: 少しパディングを調整 */
+  text-align: right;
+  font-size: 0.9em; /* ヘッダーのフォントサイズ */
+  border-radius: 3px 3px 0 0; /* ヘッダーの上部角丸 */
+  position: relative; /* z-indexがイベントより上に来るように */
+  z-index: 1;
+  /* Ensure header background does not extend beyond its bounds if cell has padding */
+  box-sizing: border-box;
+}
+
+/* 日付ヘッダーのデフォルトスタイル調整 (週・日表示の列ヘッダー) */
+.rbc-time-header-content .rbc-header,
+.rbc-time-header-cell .rbc-header {
+  padding: 4px 2px;
+  text-align: center; /* 週表示や日表示では中央揃えが一般的 */
+  font-size: 0.9em;
+  border-radius: 3px 3px 0 0;
+  position: relative;
+  z-index: 1;
+  box-sizing: border-box;
+}
+
+
+/* Staffing level specific styles for the date header (Month View) */
+/* Staffing level specific styles for the date header link (Month View) */
+/* Base style for the date number area within our custom wrapper */
+.rbc-date-cell-content-wrapper {
+  background-color: transparent !important; /* Ensure our wrapper is see-through */
+  height: 100%;
+  position: relative;
+}
+
+/* Base style for the date number area within our custom wrapper */
+.rbc-month-view .rbc-date-cell .rbc-date-cell-content-wrapper .rbc-day-bg {
+  display: block; /* Ensure it takes up space for background */
+  padding: 2px 4px;
+  text-align: right;
+  font-size: 0.9em;
+  border-radius: 3px; /* Rounded corners */
+  text-decoration: none; /* In case it's a link */
+  /* Default colors can be set here if needed, but specific classes will override */
+}
+
+/* Diagnostic border styles for the wrapper itself */
+.rbc-month-view .rbc-date-cell .rbc-date-cell-content-wrapper.date-header-severe-shortage {
+  border: 4px solid red !important;
+  box-sizing: border-box; /* Ensure border doesn't add to dimensions unexpectedly */
+}
+.rbc-month-view .rbc-date-cell .rbc-date-cell-content-wrapper.date-header-moderate-shortage {
+  border: 4px solid orange !important;
+  box-sizing: border-box;
+}
+.rbc-month-view .rbc-date-cell .rbc-date-cell-content-wrapper.date-header-staffing-ok {
+  border: 4px solid green !important;
+  box-sizing: border-box;
+}
+.rbc-month-view .rbc-date-cell .rbc-date-cell-content-wrapper.date-header-other-month {
+  border: 4px solid grey !important;
+  box-sizing: border-box;
+  opacity: 0.7; /* Apply opacity to the wrapper for other month days */
+}
+
+/* Keep the base style for .rbc-day-bg, but without specific background colors for now */
+.rbc-month-view .rbc-date-cell .rbc-date-cell-content-wrapper .rbc-day-bg {
+  display: block;
+  padding: 2px 4px;
+  text-align: right;
+  font-size: 0.9em;
+  border-radius: 3px;
+  text-decoration: none;
+  color: inherit; /* Inherit color from parent (which might be styled by wrapper or default) */
+  background-color: transparent; /* Ensure .rbc-day-bg itself is transparent for this test */
+}
+
+/* Staffing level specific styles for Week/Day View Column Headers */
+/* Note: MyDateCellWrapper applies classes to month view date cells. */
+/* For week/day view headers, if color is needed, a headerComponent prop might be necessary */
+/* or direct manipulation if classes can be added some other way. */
+/* These are placeholders if classes were to be added to .rbc-header in time views. */
+.rbc-time-header-content .rbc-header.date-header-severe-shortage,
+.rbc-time-header-cell .rbc-header.date-header-severe-shortage {
+  background-color: #fecaca !important;
+  color: #991b1b !important;
+}
+.rbc-time-header-content .rbc-header.date-header-moderate-shortage,
+.rbc-time-header-cell .rbc-header.date-header-moderate-shortage {
+  background-color: #fef08a !important;
+  color: #854d0e !important;
+}
+.rbc-time-header-content .rbc-header.date-header-staffing-ok,
+.rbc-time-header-cell .rbc-header.date-header-staffing-ok {
+  background-color: #dcfce7 !important;
+  color: #166534 !important;
+}
+.rbc-time-header-content .rbc-header.date-header-other-month,
+.rbc-time-header-cell .rbc-header.date-header-other-month {
+  background-color: #f3f4f6 !important;
+  color: #6b7280 !important;
+}
+
+/* Ensure the main content area of the date cell (where events go) remains white */
+/* The .rbc-date-cell-content-wrapper itself should be transparent or have no background */
+/* so that the underlying calendar grid and event rendering are not obscured. */
+/* Event elements will be placed on top by react-big-calendar. */
+
+.rbc-day-slot .rbc-events-container { /* For week/day views, events container */
+   position: relative; 
+   z-index: 0; 
+}
+
+.rbc-event {
+  position: relative; 
+  z-index: 2; /* Ensure events are clickable and visible above day slot backgrounds but below modal popups etc. */
+  /* eventPropGetter should handle specific event background/text colors */
+}
+
+.rbc-off-range-bg {
+  background-color: #eef2f7; /* Lighter gray for days not in the current month, if not covered by date-header-other-month */
+}
+
+/* Ensure that the content area of the date cell in month view is not affected by header color */
+.rbc-month-view .rbc-date-cell {
+    position: relative; /* Needed for z-index context if children are absolutely positioned */
+}
+
+.rbc-month-view .rbc-row-content {
+    position: relative; /* Ensure event rows are above the base cell background */
+    z-index: 0; /* Below the header */
+}
+
+
