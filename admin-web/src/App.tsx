@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { BrowserRouter, Routes, Route, Link } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Link, NavLink } from 'react-router-dom';
 import reactLogo from './assets/react.svg';
 import viteLogo from '/vite.svg';
 import './App.css';
 import { Button } from "@/components/ui/button";
 import StaffManagementPage from './pages/StaffManagementPage';
-import ShiftSubmissionPage from './pages/ShiftSubmissionPage'; // ShiftSubmissionPageをインポート
+import ShiftSubmissionPage from './pages/ShiftSubmissionPage';
+import ShiftManagementDashboardPage from './pages/ShiftManagementDashboardPage'; // ShiftSubmissionPageをインポート
 
 // ホームページのコンテンツをコンポーネントとして切り出す (変更なし)
 function HomePage() {
@@ -60,7 +61,10 @@ function App() {
               <Link to="/staff" className="text-blue-500 hover:text-blue-700">スタッフ管理</Link>
             </li>
             <li>
-              <Link to="/submit-shift" className="text-blue-500 hover:text-blue-700">シフト提出</Link> {/* 追加 */}
+              <NavLink to="/shift-submission" className={({ isActive }: { isActive: boolean }) => isActive ? "text-blue-500 font-bold" : ""}>シフト希望提出</NavLink>
+            </li>
+            <li>
+              <NavLink to="/shift-dashboard" className={({ isActive }: { isActive: boolean }) => isActive ? "text-blue-500 font-bold" : ""}>シフト管理</NavLink>
             </li>
           </ul>
         </nav>
@@ -69,7 +73,8 @@ function App() {
           <Routes>
             <Route path="/" element={<HomePage />} />
             <Route path="/staff" element={<StaffManagementPage />} />
-            <Route path="/submit-shift" element={<ShiftSubmissionPage />} /> {/* 追加 */}
+            <Route path="/shift-submission" element={<ShiftSubmissionPage />} />
+            <Route path="/shift-dashboard" element={<ShiftManagementDashboardPage />} />
           </Routes>
         </main>
       </div>
